@@ -1,0 +1,183 @@
+﻿Program.Sub.ScreenSU.Start
+Gui.Form..Create(BaseForm)
+Gui.Form..Caption("ARC 6578")
+Gui.Form..Size(4290,1755)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..AlwaysOnTop(False)
+Gui.Form..FontName("Tahoma")
+Gui.Form..FontSize(8.25)
+Gui.Form..ControlBox(False)
+Gui.Form..MaxButton(True)
+Gui.Form..MinButton(True)
+Gui.Form..MousePointer(0)
+Gui.Form..Moveable(True)
+Gui.Form..Sizeable(True)
+Gui.Form..ShowInTaskBar(True)
+Gui.Form..TitleBar(True)
+Gui.Form.lbl1.Create(Label,"Enter the fiscal year and period (yyyy/mm format):",True,3675,195,0,345,240,True,0,"Tahoma",8.25,,0,0)
+Gui.Form.lbl1.BorderStyle(0)
+Gui.Form.txt1.Create(TextBox,"",True,1500,300,0,330,600,True,0,"Tahoma",8.25,,1)
+Gui.Form.cmd1.Create(Button)
+Gui.Form.cmd1.Enabled(True)
+Gui.Form.cmd1.Visible(True)
+Gui.Form.cmd1.Zorder(0)
+Gui.Form.cmd1.Size(1125,345)
+Gui.Form.cmd1.Position(2760,570)
+Gui.Form.cmd1.Caption("Submit")
+Gui.Form.cmd1.FontName("Tahoma")
+Gui.Form.cmd1.FontSize(8.25)
+Gui.Form.cmd1.SvgPicture("icon_go_color")
+Gui.Form.cmd1.Event(Click,cmd1_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.bExists.Declare
+	v.Local.iCnt.Declare
+	v.Local.sSQL.Declare
+	v.Local.fYTD.Declare
+	v.Local.fPTD.Declare
+	v.Local.sYearPeriod.Declare
+	v.Local.dBegDate.Declare
+	v.Local.dEndDate.Declare
+	v.Local.sFilter.Declare
+	v.Local.sLastYearUsed.Declare
+	v.Local.iReportID.Declare
+	v.Local.iRunID.Declare
+	v.Local.iLogID.Declare
+	v.Local.iret.Declare
+	v.Local.sParams.Declare(String, "Period (year/period)")
+	v.Local.sValues.Declare(String)
+	
+	'Prompt the user for the period and year
+	gui.Form..Show
+	gui.Form..WaitForDismiss
+	
+	'Set year and period
+	v.Local.sValues.Set(v.Screen.Form!txt1.Text)
+	f.Intrinsic.String.Build("Initializing report for period {0}.  Please wait.", v.Local.sValues, v.Local.sYearPeriod)
+	
+	'Give the user some feedback on what is going on
+	f.Intrinsic.UI.InvokeWaitDialog(v.Local.sYearPeriod, "Loading")
+	
+	'Open connection
+	f.ODBC.Connection!con.opencompanyconnection(600)
+	
+	'Check for custom tables
+	f.ODBC.Connection!con.TableExists("GCG_GL_BALANCES",v.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists,=,False)
+		f.ODBC.Connection!con.Execute("CREATE TABLE GCG_GL_BALANCES (GLBL_YEARPERIOD CHAR(7),GLBL_ORG_ID CHAR(2),GLBL_BRANCH_ID CHAR(5),GLBL_GL CHAR(50),GLBL_DEPT CHAR(1),GLBL_PTDDEBIT_AMT DOUBLE,GLBL_NOTUSED1 INTEGER,GLBL_YTDDEBIT_AMT DOUBLE,GLBL_NOTUSED2 INTEGER );")
+	f.Intrinsic.Control.Else
+		f.ODBC.Connection!con.Execute("delete from GCG_GL_BALANCES;")
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.TableExists("GCG_GL_BUDGET_BALANCES",v.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists,=,False)
+		f.ODBC.Connection!con.Execute("CREATE TABLE GCG_GL_BUDGET_BALANCES (GLBB_YEARPERIOD CHAR(7),GLBB_ORG_ID CHAR(2),GLBB_BRANCH_ID CHAR(5),GLBB_GL CHAR(50),GLBB_DEPT CHAR(1),GLBB_PTDBUDGET_AMT DOUBLE,GLBB_YTDBUDGET_AMT DOUBLE );")
+	f.Intrinsic.Control.Else
+		f.ODBC.Connection!con.Execute("delete from GCG_GL_BUDGET_BALANCES;")
+	f.Intrinsic.Control.EndIf
+	
+	'Get initial datatables
+	f.Data.DataTable.CreateFromSQL("dtGLBal","con","select b.start_year + '/' + b.period as glbl_yearperiod, '00' as glbl_org_id, '00000' as glbl_branch_id, a.gl_account as glbl_gl,'' as glbl_dept, convert(0, sql_float) as glbl_ptddebit_amt, 0 as glbl_notused1, convert(0, sql_float) as glbl_ytddebit_amt, 0 as glbl_notused2 from v_gl_master a, v_gl_calendar b order by b.start_year + '/' + b.period, a.gl_account",true)
+	f.Data.DataTable.CreateFromSQL("dtBudgetBal","con","select b.start_year + '/' + b.period as glbb_yearperiod, '00' as glbb_org_id, '00000' as glbb_branch_id, a.gl_account as glbb_gl, '' as glbb_dept, convert(0, sql_float) as glbb_ptdbudget_amt, convert(0, sql_float) as glbb_ytdbudget_amt from v_gl_master a, v_gl_calendar b order by b.start_year + '/' + b.period, a.gl_account",true)
+	f.Data.DataTable.Createfromsql("dtGLDetail","con","select * from v_gl_detail")
+	f.Data.DataTable.Createfromsql("dtGLBudget","con","select gl_account, fiscal_year, period_no_1 as period, balance_1 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_2 as period, balance_2 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_3 as period, balance_3 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_4 as period, balance_4 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_5 as period, balance_5 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_6 as period, balance_6 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_7 as period, balance_7 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_8 as period, balance_8 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_9 as period, balance_9 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_10 as period, balance_10 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_11 as period, balance_11 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_12 as period, balance_12 as balance from v_gl_budget union select gl_account, fiscal_year, period_no_13 as period, balance_13 as balance from v_gl_budget")
+	f.Data.DataView.Create("dtGLBudget","dvGLBudget", 22)
+	f.Data.DataTable.CreateFromSQL("dtGLCalendar","con","select * from v_gl_calendar")
+	f.Data.DataView.Create("dtGLCalendar","dvGLCalendar", 22)
+	
+	f.Intrinsic.Control.For(v.Local.iCnt,0,v.DataTable.dtGLBal.RowCount--,1)
+		'Split the year and period
+		f.Intrinsic.String.Split(v.DataTable.dtGLBal(v.Local.iCnt).glbl_yearperiod!FieldVal, "/", v.Local.sYearPeriod)
+		
+		'Get the last year evaluated
+		v.Local.sLastYearUsed.Set(v.Local.sYearPeriod(0))
+		
+		'Find the year and period so we get the start and end dates
+		f.Intrinsic.String.Build("start_year='{0}' and period='{1}'",v.Local.sYearPeriod(0), v.Local.sYearPeriod(1), v.Local.sFilter)
+		f.Data.DataView.SetFilter("dtGLCalendar","dvGLCalendar",v.Local.sFilter)
+		
+		'==========GL BALANCES===========
+		'Build filter for and compute ptd amt for the period
+		f.Intrinsic.String.Build("period_beg_date_sql = '{0}' and period_end_date_sql <= '{1}' and gl_number='{2}'",v.DataView.dtGLCalendar!dvGLCalendar(0).Beg_Date!FieldVal, v.DataView.dtGLCalendar!dvGLCalendar(0).End_Date!FieldVal, v.DataTable.dtGLBal(v.Local.iCnt).glbl_gl!FieldValTrim, v.Local.sFilter)
+		f.Intrinsic.Control.If(v.Local.sYearPeriod(1),=,"13")
+			f.Intrinsic.String.Build("{0} and period_13_flag=1",v.Local.sFilter,v.Local.sFilter)
+		f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Compute("dtGLDetail","sum(amount_cmpny)", v.Local.sFilter, v.Local.fPTD)
+		
+		'Fill in ytd amt for the fiscal year (running total)
+		f.Intrinsic.Control.If(v.Local.sLastYearUsed,=,v.Local.sYearPeriod(0))
+			'The year continues
+			f.Intrinsic.Math.Add(v.Local.fYTD,v.Local.fPTD,v.Local.fYTD)
+		f.Intrinsic.Control.Else
+			'a new year begins
+			v.Local.fYTD.Set(v.Local.fPTD)
+		f.Intrinsic.Control.EndIf
+		
+		'Set back to the datatable
+		f.Data.DataTable.SetValue("dtGLBal",v.Local.iCnt,"glbl_ptddebit_amt",v.Local.fPTD,"glbl_ytddebit_amt",v.Local.fYTD)
+		
+		'==========GL BUDGET BALANCES===========
+		'Build the filter for YTD
+		f.Intrinsic.String.Build("GL_ACCOUNT='{0}' and FISCAL_YEAR='{1}' AND PERIOD <= {2}", v.DataTable.dtGLBal(v.Local.iCnt).glbl_gl!FieldValTrim, v.Local.sYearPeriod(0), v.Local.sYearPeriod(1), V.Local.sFilter)
+		
+		'Get the YTD budget for the account
+		f.Data.DataTable.Compute("dtGLBudget", "sum(balance)", v.Local.sFilter, v.Local.fYTD)
+		
+		'Build the filter for PTD
+		f.Intrinsic.String.Build("GL_ACCOUNT='{0}' and FISCAL_YEAR='{1}' AND PERIOD = {2}", v.DataTable.dtGLBal(v.Local.iCnt).glbl_gl!FieldValTrim, v.Local.sYearPeriod(0), v.Local.sYearPeriod(1), V.Local.sFilter)
+		
+		'Build the filter for the budget balance DT
+		f.Intrinsic.String.Build("fiscal_year='{0}' and gl_account='{1}' and period='{2}'", v.Local.sYearPeriod(0), v.DataTable.dtGLBal(v.Local.iCnt).glbl_gl!FieldValTrim, v.Local.sYearPeriod(1), v.Local.sFilter)
+		f.Data.DataView.SetFilter("dtGLBudget","dvGLBudget", v.Local.sFilter)
+		f.Intrinsic.Control.If(v.DataView.dtGLBudget!dvGLBudget.RowCount,>,0)
+			v.Local.fPTD.Set(v.DataView.dtGLBudget!dvGLBudget(0).Balance!FieldVal)
+		f.Intrinsic.Control.Else
+			v.Local.fPTD.Set(0)
+		f.Intrinsic.Control.EndIf
+		
+		'Fill in the budget datatable with the PTD and YTD budgets for the account
+		'f.Data.DataTable.SetValue("dtBudgetBal", v.Local.iCnt, "glbb_ptdbudget_amt", v.DataView.dtGLBudget!dvGLBudget(0).Balance!FieldVal, "glbb_ytdbudget_amt", v.Local.fYTD)
+		f.Data.DataTable.SetValue("dtBudgetBal", v.Local.iCnt, "glbb_ptdbudget_amt", v.Local.fPTD, "glbb_ytdbudget_amt", v.Local.fYTD)
+	f.Intrinsic.Control.Next(v.Local.iCnt)
+	
+	'Save to DB
+	f.Data.DataTable.SaveToDB("dtGLBal", "con", "GCG_GL_BALANCES", "glbl_yearperiod*!*glbl_gl", 128)
+	f.Data.DataTable.SaveToDB("dtBudgetBal", "con", "GCG_GL_BUDGET_BALANCES", "glbb_yearperiod*!*glbb_gl", 128)
+'	Function.Intrinsic.Debug.InvokeDebugger
+'	Function.Intrinsic.Debug.Stop
+	
+	f.Global.BI.GetIDFromName("GCG_6578_Financials.rpt",True,v.Local.iReportID)
+	f.Global.BI.GetRunID(v.Local.iRunID)
+	f.Global.BI.StartLogging(v.Local.iRunID,v.Local.iReportID,0,"GCG_6578_Financials",v.Local.iLogID)
+	f.Global.BI.StopLogging(v.Local.iLogID)
+	f.Global.bi.RunReportPreProcessor(v.Local.iRunID,v.Local.iLogID,v.local.sParams,v.Local.sValues,"",0,False,"",-1,"",0,"","",v.Local.iret)
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.Finally
+	f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.End
+f.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+Program.Sub.ErrorMsg.Start
+v.Local.sError.Declare
+'Generic Error message.
+f.Intrinsic.String.Build("Project GCG_6578_FeltonBrushFinancialStatement.g2u {0}{0}Subroutine: {1}{0}Error: {2} with Description: {3}", v.Ambient.NewLine, v.Args.CurrentSub, v.Ambient.ErrorNumber, v.Ambient.ErrorDescription, v.Local.sError)
+f.Intrinsic.UI.Msgbox(v.Local.sError)
+Program.Sub.ErrorMsg.End
+Program.Sub.cmd1_Click.Start
+
+gui.Form..Visible(False)
+Program.Sub.cmd1_Click.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$dduncan$}$20220108113124135$}$r0o+00bj735YsiGsQ60YIo/Zb+26OZQGt8YgPaMj4N95eoLJcSVQfBDyJCE52vxZL+BZbStz+8g=
+Program.Sub.Comments.End
